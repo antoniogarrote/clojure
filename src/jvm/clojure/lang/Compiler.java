@@ -17,6 +17,9 @@ package clojure.lang;
 import clojure.asm.*;
 import clojure.asm.commons.GeneratorAdapter;
 import clojure.asm.commons.Method;
+import kilim.Pausable;
+import kilim.analysis.ClassInfo;
+import kilim.analysis.ClassWeaver;
 
 import java.io.*;
 import java.lang.reflect.Constructor;
@@ -151,6 +154,9 @@ final static Type THROWABLE_TYPE = Type.getType(Throwable.class);
 final static Type BOOLEAN_OBJECT_TYPE = Type.getType(Boolean.class);
 final static Type IPERSISTENTMAP_TYPE = Type.getType(IPersistentMap.class);
 final static Type IOBJ_TYPE = Type.getType(IObj.class);
+final static Type PAUSABLE_TYPE = Type.getType(Pausable.class);
+final static Type A_TASK_FUNCTION_TYPE = Type.getType(ATaskFunction.class);
+final static Type A_TASK_FN_TYPE = Type.getType(ATaskFn.class);
 
 private static final Type[][] ARG_TYPES;
 //private static final Type[] EXCEPTION_TYPES = {Type.getType(Exception.class)};
@@ -489,9 +495,38 @@ static class DefExpr implements Expr{
 //					.without(Keyword.intern(null, "added"))
 //					.without(Keyword.intern(null, "static"));
 			Expr meta = mm.count()==0 ? null:analyze(context == C.EVAL ? context : C.EXPRESSION, mm);
-			return new DefExpr((String) SOURCE.deref(), (Integer) LINE.deref(),
-			                   v, analyze(context == C.EVAL ? context : C.EXPRESSION, RT.third(form), v.sym.name),
-			                   meta, RT.count(form) == 3, isDynamic);
+
+            Object expressionForm = RT.third(form);
+            try
+            {
+                Cons fnCons = (Cons) expressionForm;
+                if(mm!=null &&
+                        mm.valAt(Keyword.intern("pausable")) != null &&
+                        (Boolean) mm.valAt(Keyword.intern("pausable")))
+                {
+                    System.out.println("THERE WILL BE PAUSE");
+                    IPersistentMap fnSymbolMeta = fnCons.meta();
+                    if(fnSymbolMeta == null)
+                    {
+                        fnSymbolMeta = new PersistentArrayMap();
+                    }
+
+                    if(fnSymbolMeta.valAt(Keyword.intern("pausable")) == null) {
+                        fnSymbolMeta = fnSymbolMeta.assoc(Keyword.intern("pausable"),Boolean.TRUE);
+                    }
+
+                    expressionForm = fnCons.withMeta(fnSymbolMeta);
+                }
+
+            }
+            catch(Exception ex)
+            {
+                // fix this
+            }
+
+            return new DefExpr((String) SOURCE.deref(), (Integer) LINE.deref(),
+                    v, analyze(context == C.EVAL ? context : C.EXPRESSION, expressionForm, v.sym.name),
+                    meta, RT.count(form) == 3, isDynamic);
 		}
 	}
 }
@@ -3684,12 +3719,22 @@ static public class FnExpr extends ObjExpr{
 
 		try
 			{
-			fn.compile(fn.isVariadic() ? "clojure/lang/RestFn" : "clojure/lang/AFunction",
-			           (prims.size() == 0)?
-			            null
-						:prims.toArray(new String[prims.size()]),
-			            fn.onceOnly);
-			}
+                if(fn.hasMeta &&
+                   fmeta.valAt(Keyword.intern("pausable"))!=null &&
+                   ((Boolean) fmeta.valAt(Keyword.intern("pausable")))==true) {
+                    fn.compile("clojure/lang/ATaskFunction",
+                               (prims.size() == 0)?
+                                       null
+                                       :prims.toArray(new String[prims.size()]),
+                               fn.onceOnly);
+                } else {
+                    fn.compile(fn.isVariadic() ? "clojure/lang/RestFn" : "clojure/lang/AFunction",
+                               (prims.size() == 0)?
+                                       null
+                                       :prims.toArray(new String[prims.size()]),
+                               fn.onceOnly);
+                }
+            }
 		catch(IOException e)
 			{
 			throw Util.runtimeException(e);
@@ -3775,8 +3820,9 @@ static public class ObjExpr implements Expr{
 	final static Method voidctor = Method.getMethod("void <init>()");
 	protected IPersistentMap classMeta;
 	protected boolean isStatic;
+    public boolean isKilimTask;
 
-	public final String name(){
+    public final String name(){
 		return name;
 	}
 
@@ -4184,6 +4230,32 @@ static public class ObjExpr implements Expr{
 			gen.endMethod();
 			}
 
+
+            //void execute() throws Pausable
+
+         if(superName.equals("clojure/lang/ATaskFunction"))
+            {
+                this.isKilimTask = true;
+                Method methEx = Method.getMethod("void execute()");
+
+                Type[] executeExceptions = { PAUSABLE_TYPE };
+                GeneratorAdapter genEx = new GeneratorAdapter(ACC_PUBLIC,
+                                                              methEx,
+                                                              null,
+                                                              executeExceptions,
+                                                              cv);
+                genEx.visitCode();
+                genEx.loadThis();
+
+                genEx.invokeVirtual(A_TASK_FN_TYPE,Method.getMethod("void runTask() throws Pausable"));
+                genEx.returnValue();
+                genEx.endMethod();
+            }
+         else
+            {
+                this.isKilimTask = false;
+            }
+
 		emitStatics(cv);
 		emitMethods(cv);
 
@@ -4226,6 +4298,18 @@ static public class ObjExpr implements Expr{
 		cv.visitEnd();
 
 		bytecode = cw.toByteArray();
+
+        // kilim weaving
+        if(superName.equals("clojure/lang/ATaskFunction"))
+        {
+            ClassWeaver kilimWeaver = new ClassWeaver(bytecode);
+            List<ClassInfo> classInfos= kilimWeaver.getClassInfos();
+            if(classInfos.size() == 1) {
+                ClassInfo classInfo = classInfos.get(0);
+                bytecode = classInfo.bytes;
+            }
+        }
+
 		if(RT.booleanCast(COMPILE_FILES.deref()))
 			writeClassFile(internalName, bytecode);
 //		else
@@ -5150,14 +5234,33 @@ public static class FnMethod extends ObjMethod{
 
 	}
 	public void doEmit(ObjExpr fn, ClassVisitor cv){
-		Method m = new Method(getMethodName(), getReturnType(), getArgTypes());
+		Method m = null;
+        GeneratorAdapter gen = null;
 
-		GeneratorAdapter gen = new GeneratorAdapter(ACC_PUBLIC,
-		                                            m,
-		                                            null,
-		                                            //todo don't hardwire this
-		                                            EXCEPTION_TYPES,
-		                                            cv);
+        if(fn.isKilimTask)
+        {
+            System.out.println("GENERATING invokeTask");
+            m = new Method("invokeTask", getReturnType(), getArgTypes());
+            Type[] pausableException = {PAUSABLE_TYPE};
+		    gen = new GeneratorAdapter(ACC_PUBLIC,
+		                               m,
+		                               null,
+		                               //todo don't hardwire this
+                                       pausableException,
+		                               cv);
+
+        }
+        else
+        {
+            m = new Method(getMethodName(), getReturnType(), getArgTypes());
+
+            gen = new GeneratorAdapter(ACC_PUBLIC,
+                                       m,
+                                       null,
+		                               //todo don't hardwire this
+		                               EXCEPTION_TYPES,
+		                               cv);
+        }
 		gen.visitCode();
 
 		Label loopLabel = gen.mark();
@@ -5347,14 +5450,31 @@ abstract public static class ObjMethod{
 	abstract Type[] getArgTypes();
 
 	public void emit(ObjExpr fn, ClassVisitor cv){
-		Method m = new Method(getMethodName(), getReturnType(), getArgTypes());
+		Method m = null;
+        GeneratorAdapter gen = null;
 
-		GeneratorAdapter gen = new GeneratorAdapter(ACC_PUBLIC,
-		                                            m,
-		                                            null,
-		                                            //todo don't hardwire this
-		                                            EXCEPTION_TYPES,
-		                                            cv);
+        if(fn.isKilimTask) {
+            System.out.println("GENERATING invokeTask");
+            // @todo
+            // ignoring variadic and static functions
+            m = new Method("invokeTask", getReturnType(), getArgTypes());
+            Type[] pausableException = {PAUSABLE_TYPE};
+		    gen = new GeneratorAdapter(ACC_PUBLIC,
+		                               m,
+		                               null,
+		                               //todo don't hardwire this
+                                       pausableException,
+		                               cv);
+        } else {
+            m = new Method(getMethodName(), getReturnType(), getArgTypes());
+		    gen = new GeneratorAdapter(ACC_PUBLIC,
+		                               m,
+		                               null,
+		                               //todo don't hardwire this
+		                               EXCEPTION_TYPES,
+		                               cv);
+        }
+
 		gen.visitCode();
 
 		Label loopLabel = gen.mark();

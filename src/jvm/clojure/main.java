@@ -13,6 +13,8 @@ package clojure;
 import clojure.lang.Symbol;
 import clojure.lang.Var;
 import clojure.lang.RT;
+import kilim.analysis.Detector;
+import kilim.tools.Weaver;
 
 public class main{
 

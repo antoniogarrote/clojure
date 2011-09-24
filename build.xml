@@ -7,6 +7,7 @@
 
   <property name="src" location="src"/>
   <property name="test" location="test"/>
+  <property name="deps" location="deps"/>
   <property name="jsrc" location="${src}/jvm"/>
   <property name="jtestsrc" location="${test}/java"/>
   <property name="cljsrc" location="${src}/clj"/>
@@ -16,8 +17,21 @@
   <property name="target" location="target"/>
   <property name="build" location="${target}/classes"/>
   <property name="test-classes" location="${target}/test-classes"/>
+  <property name="kilim-jars" location="${deps}/kilim.jar:${deps}/kilim-runtime.jar"/>
   <property name="dist" location="dist"/>
 
+  <path id="kilim-classpath">
+      <fileset dir="deps">
+          <include name="**/*.jar"/>
+      </fileset>
+  </path>
+
+  <path id="weaving-classpath">
+     <fileset dir="deps">
+          <include name="**/*.jar"/>
+      </fileset>
+      <dirset dir="${build}"/>
+  </path>
   <!-- Get the version string out of the POM -->
   <xmlproperty file="pom.xml" prefix="pom"/>
   <property name="clojure.version.label" value="${pom.project.version}"/>
@@ -35,14 +49,17 @@
 
   <target name="compile-java" depends="init"
           description="Compile Java sources.">
+    <echo message="Classpath = ${kilim-jars}"/>
     <javac srcdir="${jsrc}" destdir="${build}" includeJavaRuntime="yes"
-           debug="true" target="1.5"/>
+           debug="true" target="1.5">
+        <classpath refid="kilim-classpath"/>
+    </javac>
   </target>
 
   <target name="compile-clojure"
           description="Compile Clojure sources.">
     <java classname="clojure.lang.Compile"
-          classpath="${build}:${cljsrc}"
+          classpath="${kilim-jars}:${build}:${cljsrc}"
           failonerror="true"
           fork="true">
       <sysproperty key="clojure.compile.path" value="${build}"/>
@@ -105,11 +122,45 @@
     </java>
   </target>
 
+    <target name="weave" >
+      <echo message="Weaving files ===================" />
+     <java classname="clojure.weaver" fork ="no">
+        <classpath refid="weaving-classpath"/>
+        <assertions>
+            <enable/>
+        </assertions>
+        <arg value="ATaskFn"/>
+      </java>
+<!--
+      <java classname="clojure.weaver" fork ="no">
+        <classpath refid="weaving-classpath"/>
+        <assertions>
+            <enable/>
+        </assertions>
+        <arg value="ITaskFn" />
+      </java>
+      <java classname="clojure.weaver" fork ="no">
+        <classpath refid="weaving-classpath"/>
+        <assertions>
+            <enable/>
+        </assertions>
+        <arg value="ATaskFunction"/>
+      </java>
+      <java classname="clojure.weaver" fork ="no">
+        <classpath refid="weaving-classpath"/>
+        <assertions>
+            <enable/>
+        </assertions>
+        <arg value="ATaskFunction$1"/>
+      </java>
+-->
+    </target>
+
   <target name="build"
           description="Build Clojure (compilation only, no tests)."
-          depends="compile-java, compile-clojure"/>
+          depends="compile-java, weave, compile-clojure"/>
 
-  <target name="jar" depends="build"
+  <target name="jar"
           description="Create clojure jar file.">
     <jar jarfile="${clojure_jar}" basedir="${build}">
       <fileset dir="${cljsrc}">
