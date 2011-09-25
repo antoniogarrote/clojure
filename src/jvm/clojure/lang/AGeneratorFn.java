@@ -1,16 +1,15 @@
 package clojure.lang;
 
 import kilim.Fiber;
+import kilim.Generator;
 import kilim.Pausable;
-import kilim.Task;
 
 /**
- * User: antonio garrote
- * Date: 22/09/2011
- * Time: 16:57
- * Abstract class implementing IFn but extending Kilim Task class
+ * User: antonio
+ * Date: 25/09/2011
+ * Time: 13:47
  */
-public abstract class ATaskFn extends Task implements IFn, ITaskFn {
+public abstract class AGeneratorFn extends Generator implements IFn, ITaskFn, IGeneratorFn {
 
 public Object call() {
 	return invoke();
@@ -654,17 +653,20 @@ static public Object applyToHelper(IFn ifn, ISeq arglist) {
 		}
 }
 
-public void runTask() throws Pausable {
+public Object generate(Object self) throws Pausable {
+    return throwArity(1);
+}
+
+public void runGenerator() throws Pausable {
 	try
 		{
-		invokeTask();
+		generate(this);
 		}
 	catch(Exception e)
 		{
 		throw Util.runtimeException(e);
 		}
 }
-
 public Object throwArity(int n){
 	String name = getClass().getSimpleName();
 	int suffix = name.lastIndexOf("__");

@@ -25,6 +25,15 @@ public class weaver {
         } else if(args[0].compareTo("ATaskFunction$1")==0) {
             System.out.println("*** clojure.lang.ATaskFunction$1.class");
             Weaver.weaveClass("clojure.lang.ATaskFunction$1", Detector.DEFAULT);
+        } else if(args[0].equals("IGeneratorFn")) {
+            System.out.println("*** clojure.lang.IGeneratorFn");
+            Weaver.weaveClass("clojure.lang.IGeneratorFn", Detector.DEFAULT);
+        } else if(args[0].equals("AGeneratorFn")) {
+            System.out.println("*** clojure.lang.AGeneratorFn");
+            Weaver.weaveClass("clojure.lang.AGeneratorFn", Detector.DEFAULT);
+        } else if(args[0].equals("AGeneratorFunction")) {
+            System.out.println("*** clojure.lang.AGeneratorFunction");
+            Weaver.weaveClass("clojure.lang.AGeneratorFunction", Detector.DEFAULT);
         } else {
             System.err.println("Error, I don't know how to weave "+args[0]);
         }

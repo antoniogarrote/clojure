@@ -155,8 +155,10 @@ final static Type BOOLEAN_OBJECT_TYPE = Type.getType(Boolean.class);
 final static Type IPERSISTENTMAP_TYPE = Type.getType(IPersistentMap.class);
 final static Type IOBJ_TYPE = Type.getType(IObj.class);
 final static Type PAUSABLE_TYPE = Type.getType(Pausable.class);
-final static Type A_TASK_FUNCTION_TYPE = Type.getType(ATaskFunction.class);
+final static Type ITASK_FN_TYPE = Type.getType(ITaskFn.class);
 final static Type A_TASK_FN_TYPE = Type.getType(ATaskFn.class);
+final static Type IGENERATOR_FN_TYPE = Type.getType(IGeneratorFn.class);
+final static Type A_GENERATOR_FN_TYPE = Type.getType(AGeneratorFn.class);
 
 private static final Type[][] ARG_TYPES;
 //private static final Type[] EXCEPTION_TYPES = {Type.getType(Exception.class)};
@@ -513,6 +515,33 @@ static class DefExpr implements Expr{
 
                     if(fnSymbolMeta.valAt(Keyword.intern("pausable")) == null) {
                         fnSymbolMeta = fnSymbolMeta.assoc(Keyword.intern("pausable"),Boolean.TRUE);
+                    }
+
+                    expressionForm = fnCons.withMeta(fnSymbolMeta);
+                }
+
+            }
+            catch(Exception ex)
+            {
+                // fix this
+            }
+
+            try
+            {
+                Cons fnCons = (Cons) expressionForm;
+                if(mm!=null &&
+                        mm.valAt(Keyword.intern("generator")) != null &&
+                        (Boolean) mm.valAt(Keyword.intern("generator")))
+                {
+                    System.out.println("THERE WILL BE YIELDS");
+                    IPersistentMap fnSymbolMeta = fnCons.meta();
+                    if(fnSymbolMeta == null)
+                    {
+                        fnSymbolMeta = new PersistentArrayMap();
+                    }
+
+                    if(fnSymbolMeta.valAt(Keyword.intern("generator")) == null) {
+                        fnSymbolMeta = fnSymbolMeta.assoc(Keyword.intern("generator"),Boolean.TRUE);
                     }
 
                     expressionForm = fnCons.withMeta(fnSymbolMeta);
@@ -3387,12 +3416,36 @@ static class InvokeExpr implements Expr{
 			emitProto(context,objx,gen);
 			}
 
-		else
+		else if(this.fexpr instanceof VarExpr &&
+                RT.meta(((VarExpr) this.fexpr).var) !=null &&
+                RT.meta(((VarExpr) this.fexpr).var).valAt(Keyword.intern("pausable")) !=null &&
+                (Boolean) RT.meta(((VarExpr) this.fexpr).var).valAt(Keyword.intern("pausable")))
 			{
+                System.out.println("INVOKING PAUSABLE");
+                fexpr.emit(C.EXPRESSION, objx, gen);
+                gen.checkCast(A_TASK_FN_TYPE);
+                Class invokeClass = ((VarExpr) this.fexpr).var.root.getClass();
+                emitArgsAndCallTask(invokeClass, 0, context,objx,gen);
+                System.out.println("INVOKED...");
+			}
+		else if(this.fexpr instanceof VarExpr &&
+                RT.meta(((VarExpr) this.fexpr).var) !=null &&
+                RT.meta(((VarExpr) this.fexpr).var).valAt(Keyword.intern("generator")) !=null &&
+                (Boolean) RT.meta(((VarExpr) this.fexpr).var).valAt(Keyword.intern("generator")))
+			{
+                System.out.println("INVOKING PAUSABLE IN GENERATOR");
+                fexpr.emit(C.EXPRESSION, objx, gen);
+                gen.checkCast(A_GENERATOR_FN_TYPE);
+                Class invokeClass = ((VarExpr) this.fexpr).var.root.getClass();
+                emitArgsAndCallGenerator(invokeClass, 0, context,objx,gen);
+                System.out.println("INVOKED...");
+			}
+        else
+        {
 			fexpr.emit(C.EXPRESSION, objx, gen);
 			gen.checkCast(IFN_TYPE);
-			emitArgsAndCall(0, context,objx,gen);
-			}
+			emitArgsAndCall(0, context, objx, gen);
+        }
 		if(context == C.STATEMENT)
 			gen.pop();		
 	}
@@ -3471,6 +3524,62 @@ static class InvokeExpr implements Expr{
 
 		gen.invokeInterface(IFN_TYPE, new Method("invoke", OBJECT_TYPE, ARG_TYPES[Math.min(MAX_POSITIONAL_ARITY + 1,
 		                                                                                   args.count())]));
+	}
+
+	void emitArgsAndCallTask(Class invokeClass, int firstArgToEmit, C context, ObjExpr objx, GeneratorAdapter gen){
+		for(int i = firstArgToEmit; i < Math.min(MAX_POSITIONAL_ARITY, args.count()); i++)
+			{
+			Expr e = (Expr) args.nth(i);
+			e.emit(C.EXPRESSION, objx, gen);
+			}
+		if(args.count() > MAX_POSITIONAL_ARITY)
+			{
+			PersistentVector restArgs = PersistentVector.EMPTY;
+			for(int i = MAX_POSITIONAL_ARITY; i < args.count(); i++)
+				{
+				restArgs = restArgs.cons(args.nth(i));
+				}
+			MethodExpr.emitArgsAsArray(restArgs, objx, gen);
+			}
+
+		if(context == C.RETURN)
+			{
+			ObjMethod method = (ObjMethod) METHOD.deref();
+			method.emitClearLocals(gen);
+			}
+
+        //gen.invokeVirtual(Type.getType(invokeClass),new Method("invokeTask", OBJECT_TYPE, ARG_TYPES[Math.min(MAX_POSITIONAL_ARITY + 1,
+        //                                             args.count())]));
+		gen.invokeInterface(ITASK_FN_TYPE, new Method("invokeTask", OBJECT_TYPE, ARG_TYPES[Math.min(MAX_POSITIONAL_ARITY + 1,
+                                                       args.count())]));
+	}
+
+	void emitArgsAndCallGenerator(Class invokeClass, int firstArgToEmit, C context, ObjExpr objx, GeneratorAdapter gen){
+		for(int i = firstArgToEmit; i < Math.min(MAX_POSITIONAL_ARITY, args.count()); i++)
+			{
+			Expr e = (Expr) args.nth(i);
+			e.emit(C.EXPRESSION, objx, gen);
+			}
+		if(args.count() > MAX_POSITIONAL_ARITY)
+			{
+			PersistentVector restArgs = PersistentVector.EMPTY;
+			for(int i = MAX_POSITIONAL_ARITY; i < args.count(); i++)
+				{
+				restArgs = restArgs.cons(args.nth(i));
+				}
+			MethodExpr.emitArgsAsArray(restArgs, objx, gen);
+			}
+
+		if(context == C.RETURN)
+			{
+			ObjMethod method = (ObjMethod) METHOD.deref();
+			method.emitClearLocals(gen);
+			}
+
+        //gen.invokeVirtual(Type.getType(invokeClass),new Method("invokeTask", OBJECT_TYPE, ARG_TYPES[Math.min(MAX_POSITIONAL_ARITY + 1,
+        //                                             args.count())]));
+		gen.invokeInterface(A_GENERATOR_FN_TYPE, new Method("generate", OBJECT_TYPE, ARG_TYPES[Math.min(MAX_POSITIONAL_ARITY + 1,
+                                                       args.count())]));
 	}
 
 	public boolean hasJavaClass() {
@@ -3727,6 +3836,14 @@ static public class FnExpr extends ObjExpr{
                                        null
                                        :prims.toArray(new String[prims.size()]),
                                fn.onceOnly);
+                } else if(fn.hasMeta &&
+                          fmeta.valAt(Keyword.intern("generator"))!=null &&
+                          ((Boolean) fmeta.valAt(Keyword.intern("generator")))==true) {
+                    fn.compile("clojure/lang/AGeneratorFunction",
+                               (prims.size() == 0)?
+                                       null
+                                       :prims.toArray(new String[prims.size()]),
+                               fn.onceOnly);
                 } else {
                     fn.compile(fn.isVariadic() ? "clojure/lang/RestFn" : "clojure/lang/AFunction",
                                (prims.size() == 0)?
@@ -3821,6 +3938,7 @@ static public class ObjExpr implements Expr{
 	protected IPersistentMap classMeta;
 	protected boolean isStatic;
     public boolean isKilimTask;
+    public boolean isKilimGenerator;
 
     public final String name(){
 		return name;
@@ -4236,6 +4354,7 @@ static public class ObjExpr implements Expr{
          if(superName.equals("clojure/lang/ATaskFunction"))
             {
                 this.isKilimTask = true;
+                this.isKilimGenerator = false;
                 Method methEx = Method.getMethod("void execute()");
 
                 Type[] executeExceptions = { PAUSABLE_TYPE };
@@ -4248,6 +4367,25 @@ static public class ObjExpr implements Expr{
                 genEx.loadThis();
 
                 genEx.invokeVirtual(A_TASK_FN_TYPE,Method.getMethod("void runTask() throws Pausable"));
+                genEx.returnValue();
+                genEx.endMethod();
+            }
+         else if(superName.equals("clojure/lang/AGeneratorFunction"))
+            {
+                this.isKilimTask = false;
+                this.isKilimGenerator = true;
+                Method methEx = Method.getMethod("void execute()");
+
+                Type[] executeExceptions = { PAUSABLE_TYPE };
+                GeneratorAdapter genEx = new GeneratorAdapter(ACC_PUBLIC,
+                                                              methEx,
+                                                              null,
+                                                              executeExceptions,
+                                                              cv);
+                genEx.visitCode();
+                genEx.loadThis();
+
+                genEx.invokeVirtual(A_GENERATOR_FN_TYPE,Method.getMethod("void runGenerator() throws Pausable"));
                 genEx.returnValue();
                 genEx.endMethod();
             }
@@ -4300,18 +4438,44 @@ static public class ObjExpr implements Expr{
 		bytecode = cw.toByteArray();
 
         // kilim weaving
-        if(superName.equals("clojure/lang/ATaskFunction"))
+        if(superName.equals("clojure/lang/ATaskFunction") ||
+           superName.equals("clojure/lang/AGeneratorFunction"))
         {
             ClassWeaver kilimWeaver = new ClassWeaver(bytecode);
             List<ClassInfo> classInfos= kilimWeaver.getClassInfos();
             if(classInfos.size() == 1) {
                 ClassInfo classInfo = classInfos.get(0);
                 bytecode = classInfo.bytes;
+            } else if(classInfos.size()>1) {
+                ClassInfo thisFnClassInfo = null;
+                for(ClassInfo aClassInfo : classInfos) {
+                    if(aClassInfo.className.equals(internalName())) {
+                        thisFnClassInfo = aClassInfo;
+                    } else {
+                        try
+                        {
+                            System.out.println("*** Loading additional weaved class "+aClassInfo.className);
+                            DynamicClassLoader dynamicLoader = (DynamicClassLoader) LOADER.deref();
+                            dynamicLoader.defineClass(aClassInfo.className.replace("/","."), aClassInfo.bytes,null);
+                        }
+                        catch(Exception e)
+                        {
+                            System.out.println("error loading additional weaved class "+e.getMessage()+" "+this.name);
+                        }
+                    }
+                }
+                if(thisFnClassInfo != null) {
+                    System.out.println("*** LOADING WEAVED CLASS "+thisFnClassInfo.className);
+                    bytecode = thisFnClassInfo.bytes;
+                }
             }
+
         }
 
 		if(RT.booleanCast(COMPILE_FILES.deref()))
 			writeClassFile(internalName, bytecode);
+
+
 //		else
 //			getCompiledClass();
 	}
@@ -5250,6 +5414,19 @@ public static class FnMethod extends ObjMethod{
 		                               cv);
 
         }
+        else if(fn.isKilimGenerator)
+        {
+            System.out.println("GENERATING generate");
+            m = new Method("generate", getReturnType(), getArgTypes());
+            Type[] pausableException = {PAUSABLE_TYPE};
+		    gen = new GeneratorAdapter(ACC_PUBLIC,
+		                               m,
+		                               null,
+		                               //todo don't hardwire this
+                                       pausableException,
+		                               cv);
+
+        }
         else
         {
             m = new Method(getMethodName(), getReturnType(), getArgTypes());
@@ -5465,7 +5642,22 @@ abstract public static class ObjMethod{
 		                               //todo don't hardwire this
                                        pausableException,
 		                               cv);
-        } else {
+        }
+        else if(fn.isKilimGenerator) {
+            System.out.println("GENERATING generate");
+            // @todo
+            // ignoring variadic and static functions
+            m = new Method("generate", getReturnType(), getArgTypes());
+            Type[] pausableException = {PAUSABLE_TYPE};
+		    gen = new GeneratorAdapter(ACC_PUBLIC,
+		                               m,
+		                               null,
+		                               //todo don't hardwire this
+                                       pausableException,
+		                               cv);
+        }
+        else
+        {
             m = new Method(getMethodName(), getReturnType(), getArgTypes());
 		    gen = new GeneratorAdapter(ACC_PUBLIC,
 		                               m,
@@ -7060,6 +7252,24 @@ static public void writeClassFile(String internalName, byte[] bytecode) throws I
 		cfs.close();
 		}
 }
+/*
+static public void writeClassFileTest(String internalName, byte[] bytecode) throws IOException{
+	String path = "/Users/antonio/Desktop/" + internalName + ".class";
+	File cf = new File(path);
+	cf.createNewFile();
+	FileOutputStream cfs = new FileOutputStream(cf);
+	try
+		{
+		cfs.write(bytecode);
+		cfs.flush();
+		cfs.getFD().sync();
+		}
+	finally
+		{
+		cfs.close();
+		}
+}
+*/
 
 public static void pushNS(){
 	Var.pushThreadBindings(PersistentHashMap.create(Var.intern(Symbol.intern("clojure.core"),

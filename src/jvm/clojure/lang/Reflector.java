@@ -12,6 +12,8 @@
 
 package clojure.lang;
 
+import kilim.Pausable;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -317,6 +319,7 @@ public static Object invokeNoArgInstanceMember(Object target, String name) {
 	else
 		return getInstanceField(target, name);
 }
+
 
 public static Object invokeInstanceMember(Object target, String name) {
 	//check for field first
