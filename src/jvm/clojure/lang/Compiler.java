@@ -155,7 +155,8 @@ final static Type BOOLEAN_OBJECT_TYPE = Type.getType(Boolean.class);
 final static Type IPERSISTENTMAP_TYPE = Type.getType(IPersistentMap.class);
 final static Type IOBJ_TYPE = Type.getType(IObj.class);
 final static Type PAUSABLE_TYPE = Type.getType(Pausable.class);
-final static Type ITASK_FN_TYPE = Type.getType(ITaskFn.class);
+final static Type
+        ITASK_FN_TYPE = Type.getType(ITaskFn.class);
 final static Type A_TASK_FN_TYPE = Type.getType(ATaskFn.class);
 final static Type IGENERATOR_FN_TYPE = Type.getType(IGeneratorFn.class);
 final static Type A_GENERATOR_FN_TYPE = Type.getType(AGeneratorFn.class);

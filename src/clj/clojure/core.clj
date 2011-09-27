@@ -5973,6 +5973,7 @@
 (load "core_deftype")
 (load "core/protocols")
 (load "gvec")
+(load "kilim")
 
 ;; redefine reduce with internal-reduce
 (defn reduce

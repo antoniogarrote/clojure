@@ -1,64 +1,153 @@
- *   Clojure
- *   Copyright (c) Rich Hickey. All rights reserved.
- *   The use and distribution terms for this software are covered by the
- *   Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php)
- *   which can be found in the file epl-v10.html at the root of this distribution.
- *   By using this software in any fashion, you are agreeing to be bound by
- * 	 the terms of this license.
- *   You must not remove this notice, or any other, from this software.
+A modified Clojure compile supporting kilim tasks.
 
-Docs: http://clojure.org
-Feedback: http://groups.google.com/group/clojure
-Getting Started: http://dev.clojure.org/display/doc/Getting+Started
+Some examples:
 
-To run:  java -cp clojure-${VERSION}.jar clojure.main
-
-To build locally with Ant:  ant
+(ns clj-kilim.core
+  (:import [kilim Mailbox Pausable Task]))
 
 
-Maven 2 build instructions:
-
-  To build:  mvn package 
-  The built JARs will be in target/
-
-  To build without testing:  mvn package -Dmaven.test.skip=true
-
-  To build and install in local Maven repository:  mvn install
-
-  To build a ZIP distribution:  mvn package -Pdistribution
-  The built .zip will be in target/
+(defn test-1
+  ([] (let [^kilim.Mailbox mbox (new kilim.Mailbox)
+            actor ^{:pausable true} (fn [] (let [rec (.get mbox)] (println (str "RECEIVED " rec))))]
+        (.start actor)
+        (.putnb mbox "hola"))))
 
 
---------------------------------------------------------------------------
-This program uses the ASM bytecode engineering library which is distributed
-with the following notice:
+(defn ^{:pausable true} receive
+  ([^kilim.Mailbox mbox]
+     (.get mbox)))
 
-Copyright (c) 2000-2005 INRIA, France Telecom
-All rights reserved.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
+(defn actor-mbox
+  ([i] (let [^kilim.Mailbox mbox (new kilim.Mailbox)
+             actor ^{:pausable true} (fn [] (loop [rec (.get mbox)] (println (str "RECEIVED " rec " - " i)) (recur (.get mbox))))]
+         (.start actor)
+         mbox)))
 
-1. Redistributions of source code must retain the above copyright
-   notice, this list of conditions and the following disclaimer.
+;(let [m (actor-mbox 0)]
+;  (.putnb m "hola"))
 
-2. Redistributions in binary form must reproduce the above copyright
-   notice, this list of conditions and the following disclaimer in the
-   documentation and/or other materials provided with the distribution.
 
-3. Neither the name of the copyright holders nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
+(defn actor-mbox-2
+  ([i] (let [^kilim.Mailbox mbox (new kilim.Mailbox)
+             actor ^{:pausable true} (fn [] (loop [rec (receive mbox)] (println (str "RECEIVED " rec " - " i)) (recur (.get mbox))))]
+         (.start actor)
+         mbox)))
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
-LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
-THE POSSIBILITY OF SUCH DAMAGE.
+
+(defn multitest
+  ([] (let [boxes (map (fn [x] (actor-mbox-2 x)) (range 0 1000))]
+        (loop [mboxes (cycle boxes)]
+          (.putnb (first mboxes) "hola!")
+          (recur (rest mboxes))))))
+;(multitest)
+
+;;; chain example
+
+(defn chain
+  ([^kilim.Mailbox prev-mbox]
+     (chain prev-mbox (kilim.Mailbox.)))
+  ([^kilim.Mailbox prev-mbox ^kilim.Mailbox next-mbox]
+     (let [node ^{:pausable true} (fn [] (let [rec (.get prev-mbox)]
+                                          (if (nil? next-mbox)
+                                            (println (str rec "world"))
+                                            (.put next-mbox (str "hello " rec)))))]
+       (.start node)
+       next-mbox)))
+
+(defn chain-example
+  ([chain-length]
+     (let [^kilim.Mailbox initial-mbox (kilim.Mailbox.)
+           ^kilim.Mailbox prev-last-mbox (reduce (fn [prev-mbox _] (chain prev-mbox))
+                                                 initial-mbox
+                                                 (range 0 (dec chain-length)))]
+       (chain prev-last-mbox nil)
+       (.putnb initial-mbox "hello "))))
+
+;(chain-example 5000)
+
+
+;; Timed task
+
+(defn timed-task
+  ([i exitmb]
+     (let [task ^{:pausable true}
+           (fn [] (do (println (str "Task #" i " going to sleep ..."))
+                     (kilim.Task/sleep 2000)
+                     (println (str "           Task #" i " waking up"))))]
+       (.. task start (informOnExit exitmb)))))
+
+(defn timed-task-example
+  ([num-tasks]
+     (let [^kilim.Mailbox exitmb (kilim.Mailbox.)]
+       (doseq [i (range 0 num-tasks)]
+         (timed-task i exitmb))
+       (.getb exitmb)
+       (println (str "finished...")))))
+
+;(timed-task-example 1000)
+
+
+;; Group example
+
+(defn group-example
+  ([]
+     (let [task1 ^{:pausable true}
+           (fn [] (do (println (str "Task #" 1 " going to sleep ..."))
+                     (kilim.Task/sleep 1000)
+                     (println (str "           Task #" 1 " waking up"))))
+           task2 ^{:pausable true}
+           (fn [] (do (println (str "Task #" 2 " going to sleep ..."))
+                     (kilim.Task/sleep 1000)
+                     (println (str "           Task #" 2 " waking up"))))
+           group (kilim.TaskGroup.)]
+       (.add group (.start task1))
+       (.add group (.start task2))
+       (.joinb group)
+       (println "finished"))))
+
+;(group-example)
+
+;; test yield
+
+(defn ^{:generator true} fib [^kilim.Generator g]
+  (. g yield java.math.BigInteger/ZERO)
+  (loop [i java.math.BigInteger/ZERO
+         j java.math.BigInteger/ONE]
+    (. g yield j)
+    (recur j (.add i j))))
+
+
+
+(defn test-generator
+  ([] (let [g (kilim-generator-seq fib)]
+        (doseq [n (take 10000 g)]
+          (println (str "GOT " n))))))
+
+;(test-generator)
+(take 10 (kilim-generator-seq fib))
+
+;; Simple HTTP server
+(def Kls
+  (clojure.core/proxy-kilim [kilim.http.HttpSession] []
+                            (execute []
+                                     (let [req (kilim.http.HttpRequest.)]
+                                        ;(.readRequest this req)
+                                       (println (str "received something"))))))
+
+
+(def http-handler
+  (kilim-http-handler ^{:pausable true} (fn [^kilim.http.HttpSession this]
+                                          (let [req (kilim.http.HttpRequest.)]
+                                            (.readRequest this req)
+                                            (println (str "received something! -> " req))
+                                            (let [^kilim.http.HttpResponse resp (kilim.http.HttpResponse.)
+                                                  pw (java.io.PrintWriter. (.getOutputStream resp))]
+                                              (.append pw (str "<html><body><h1>Request!</h1> <br/> <p>Path: " (.uriPath req) "</p></body></html>"))
+                                              (.flush pw)
+                                              (.sendResponse this resp))))))
+
+
+;(kilim.http.HttpServer. 7292 http-handler)
+
+
