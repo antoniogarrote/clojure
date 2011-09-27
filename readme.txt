@@ -131,14 +131,17 @@ Some examples:
 (def http-handler
   (kilim-http-handler ^{:pausable true} (fn [^kilim.http.HttpSession this]
                                           (let [req (kilim.http.HttpRequest.)]
-                                            (.readRequest this req)
-                                            (println (str "received something! -> " req))
-                                            (let [^kilim.http.HttpResponse resp (kilim.http.HttpResponse.)
-                                                  pw (java.io.PrintWriter. (.getOutputStream resp))]
-                                              (.append pw (str "<html><body><h1>Request!</h1> <br/> <p>Path: " (.uriPath req) "</p></body></html>"))
-                                              (.flush pw)
-                                              (.sendResponse this resp))))))
-
+                                            (loop []                                            
+                                              (.readRequest this req)
+                                              (println (str "received something! -> " req))
+                                              (let [^kilim.http.HttpResponse resp (kilim.http.HttpResponse.)
+                                                    pw (java.io.PrintWriter. (.getOutputStream resp))]
+                                                (.append pw (str "<html><body><h1>Request!</h1> <br/> <p>Path: " (.uriPath req) "</p></body></html>"))
+                                                (.flush pw)
+                                                (.sendResponse this resp)
+                                                (if (.keepAlive req)
+                                                  (recur)
+                                                  (println "ending execution"))))))))
 
 ;(kilim.http.HttpServer. 7292 http-handler)
 
