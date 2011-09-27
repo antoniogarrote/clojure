@@ -128,14 +128,6 @@ Some examples:
 (take 10 (kilim-generator-seq fib))
 
 ;; Simple HTTP server
-(def Kls
-  (clojure.core/proxy-kilim [kilim.http.HttpSession] []
-                            (execute []
-                                     (let [req (kilim.http.HttpRequest.)]
-                                        ;(.readRequest this req)
-                                       (println (str "received something"))))))
-
-
 (def http-handler
   (kilim-http-handler ^{:pausable true} (fn [^kilim.http.HttpSession this]
                                           (let [req (kilim.http.HttpRequest.)]
