@@ -34,6 +34,9 @@ public class weaver {
         } else if(args[0].equals("AGeneratorFunction")) {
             System.out.println("*** clojure.lang.AGeneratorFunction");
             Weaver.weaveClass("clojure.lang.AGeneratorFunction", Detector.DEFAULT);
+        } else if(args[0].equals("ReflectorKilim")) {
+            System.out.println("*** clojure.kilim.ReflectorKilim");
+            Weaver.weaveClass("clojure.kilim.ReflectorKilim", Detector.DEFAULT);
         } else {
             System.err.println("Error, I don't know how to weave "+args[0]);
         }

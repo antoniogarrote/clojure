@@ -3,29 +3,27 @@
 
 
 (defn test-1
-  ([] (let [^kilim.Mailbox mbox (new kilim.Mailbox)
+  ([] (let [mbox (new kilim.Mailbox)
             actor ^{:pausable true} (fn [] (let [rec (.get mbox)] (println (str "RECEIVED " rec))))]
         (.start actor)
         (.putnb mbox "hola"))))
 
-
 (defn ^{:pausable true} receive
-  ([^kilim.Mailbox mbox]
+  ([mbox]
      (.get mbox)))
 
-
 (defn actor-mbox
-  ([i] (let [^kilim.Mailbox mbox (new kilim.Mailbox)
+  ([i] (let [mbox (new kilim.Mailbox)
              actor ^{:pausable true} (fn [] (loop [rec (.get mbox)] (println (str "RECEIVED " rec " - " i)) (recur (.get mbox))))]
          (.start actor)
          mbox)))
 
-;(let [m (actor-mbox 0)]
-;  (.putnb m "hola"))
+(let [m (actor-mbox 0)]
+  (.putnb m "hola"))
 
 
 (defn actor-mbox-2
-  ([i] (let [^kilim.Mailbox mbox (new kilim.Mailbox)
+  ([i] (let [mbox (new kilim.Mailbox)
              actor ^{:pausable true} (fn [] (loop [rec (receive mbox)] (println (str "RECEIVED " rec " - " i)) (recur (.get mbox))))]
          (.start actor)
          mbox)))
@@ -36,14 +34,14 @@
         (loop [mboxes (cycle boxes)]
           (.putnb (first mboxes) "hola!")
           (recur (rest mboxes))))))
-;(multitest)
+(multitest)
 
 ;;; chain example
 
 (defn chain
-  ([^kilim.Mailbox prev-mbox]
+  ([prev-mbox]
      (chain prev-mbox (kilim.Mailbox.)))
-  ([^kilim.Mailbox prev-mbox ^kilim.Mailbox next-mbox]
+  ([prev-mbox next-mbox]
      (let [node ^{:pausable true} (fn [] (let [rec (.get prev-mbox)]
                                           (if (nil? next-mbox)
                                             (println (str rec "world"))
@@ -53,14 +51,14 @@
 
 (defn chain-example
   ([chain-length]
-     (let [^kilim.Mailbox initial-mbox (kilim.Mailbox.)
-           ^kilim.Mailbox prev-last-mbox (reduce (fn [prev-mbox _] (chain prev-mbox))
-                                                 initial-mbox
-                                                 (range 0 (dec chain-length)))]
+     (let [initial-mbox (kilim.Mailbox.)
+           prev-last-mbox (reduce (fn [prev-mbox _] (chain prev-mbox))
+                                  initial-mbox
+                                  (range 0 (dec chain-length)))]
        (chain prev-last-mbox nil)
        (.putnb initial-mbox "hello "))))
 
-;(chain-example 5000)
+;(chain-example 10)
 
 
 ;; Timed task
@@ -75,7 +73,7 @@
 
 (defn timed-task-example
   ([num-tasks]
-     (let [^kilim.Mailbox exitmb (kilim.Mailbox.)]
+     (let [exitmb (kilim.Mailbox.)]
        (doseq [i (range 0 num-tasks)]
          (timed-task i exitmb))
        (.getb exitmb)
@@ -106,7 +104,7 @@
 
 ;; test yield
 
-(defn ^{:generator true} fib [^kilim.Generator g]
+(defn ^{:generator true} fib [g]
   (. g yield java.math.BigInteger/ZERO)
   (loop [i java.math.BigInteger/ZERO
          j java.math.BigInteger/ONE]
@@ -126,12 +124,12 @@
 ;; Simple HTTP server
 
 (def http-handler
-  (kilim-http-handler ^{:pausable true} (fn [^kilim.http.HttpSession this]
+  (kilim-http-handler ^{:pausable true} (fn [this]
                                           (let [req (kilim.http.HttpRequest.)]
                                             (loop []                                            
                                               (.readRequest this req)
                                               (println (str "received something! -> " req))
-                                              (let [^kilim.http.HttpResponse resp (kilim.http.HttpResponse.)
+                                              (let [resp (kilim.http.HttpResponse.)
                                                     pw (java.io.PrintWriter. (.getOutputStream resp))]
                                                 (.append pw (str "<html><body><h1>Request!</h1> <br/> <p>Path: " (.uriPath req) "</p></body></html>"))
                                                 (.flush pw)

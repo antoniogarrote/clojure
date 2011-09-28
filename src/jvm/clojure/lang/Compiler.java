@@ -17,6 +17,7 @@ package clojure.lang;
 import clojure.asm.*;
 import clojure.asm.commons.GeneratorAdapter;
 import clojure.asm.commons.Method;
+import clojure.kilim.ReflectorKilim;
 import kilim.Pausable;
 import kilim.analysis.ClassInfo;
 import kilim.analysis.ClassWeaver;
@@ -150,6 +151,7 @@ final static Type CLASS_TYPE = Type.getType(Class.class);
 final static Type NS_TYPE = Type.getType(Namespace.class);
 final static Type UTIL_TYPE = Type.getType(Util.class);
 final static Type REFLECTOR_TYPE = Type.getType(Reflector.class);
+final static Type REFLECTOR_KILIM_TYPE = Type.getType(ReflectorKilim.class);
 final static Type THROWABLE_TYPE = Type.getType(Throwable.class);
 final static Type BOOLEAN_OBJECT_TYPE = Type.getType(Boolean.class);
 final static Type IPERSISTENTMAP_TYPE = Type.getType(IPersistentMap.class);
@@ -282,6 +284,8 @@ static final public Var CLEAR_SITES = Var.create(null).setDynamic();
 	RETURN,      //tail position relative to enclosing recur frame
 	EVAL
 }
+
+static public boolean kilimTaskFlag = false;
 
 interface Expr{
 	Object eval() ;
@@ -519,6 +523,7 @@ static class DefExpr implements Expr{
                     }
 
                     expressionForm = fnCons.withMeta(fnSymbolMeta);
+                    kilimTaskFlag = true;
                 }
 
             }
@@ -546,6 +551,7 @@ static class DefExpr implements Expr{
                     }
 
                     expressionForm = fnCons.withMeta(fnSymbolMeta);
+                    kilimTaskFlag = true;
                 }
 
             }
@@ -1137,7 +1143,11 @@ static class InstanceFieldExpr extends FieldExpr implements AssignableExpr{
 			{
 			target.emit(C.EXPRESSION, objx, gen);
 			gen.push(fieldName);
-			gen.invokeStatic(REFLECTOR_TYPE, invokeNoArgInstanceMember);
+            if(kilimTaskFlag) {
+                gen.invokeStatic(REFLECTOR_KILIM_TYPE, invokeNoArgInstanceMember);
+            } else {
+                gen.invokeStatic(REFLECTOR_TYPE, invokeNoArgInstanceMember);
+            }
 			if(context == C.STATEMENT)
 				gen.pop();
 			}
@@ -1447,7 +1457,15 @@ static class InstanceMethodExpr extends MethodExpr{
 				ms.add(method);
 				return Reflector.invokeMatchingMethod(methodName, ms, targetval, argvals);
 				}
-			return Reflector.invokeInstanceMethod(targetval, methodName, argvals);
+
+            if(!kilimTaskFlag)
+            {
+                return Reflector.invokeInstanceMethod(targetval, methodName, argvals);
+            } else
+            {
+                System.out.println("REFLECTION KILIM invoking instance method "+methodName);
+                return ReflectorKilim.invokeInstanceMethod(targetval, methodName, argvals);
+            }
 			}
 		catch(Throwable e)
 			{
@@ -1518,7 +1536,14 @@ static class InstanceMethodExpr extends MethodExpr{
 				ObjMethod method = (ObjMethod) METHOD.deref();
 				method.emitClearLocals(gen);
 				}
-			gen.invokeStatic(REFLECTOR_TYPE, invokeInstanceMethodMethod);
+            if(kilimTaskFlag)
+            {
+                gen.invokeStatic(REFLECTOR_KILIM_TYPE, invokeInstanceMethodMethod);
+            }
+            else
+            {
+                gen.invokeStatic(REFLECTOR_TYPE, invokeInstanceMethodMethod);
+            }
 			}
 		if(context == C.STATEMENT)
 			gen.pop();
@@ -4355,6 +4380,7 @@ static public class ObjExpr implements Expr{
          if(superName.equals("clojure/lang/ATaskFunction"))
             {
                 this.isKilimTask = true;
+                kilimTaskFlag = true;
                 this.isKilimGenerator = false;
                 Method methEx = Method.getMethod("void execute()");
 
@@ -4374,6 +4400,7 @@ static public class ObjExpr implements Expr{
          else if(superName.equals("clojure/lang/AGeneratorFunction"))
             {
                 this.isKilimTask = false;
+                kilimTaskFlag = true;
                 this.isKilimGenerator = true;
                 Method methEx = Method.getMethod("void execute()");
 
@@ -4392,6 +4419,7 @@ static public class ObjExpr implements Expr{
             }
          else
             {
+                kilimTaskFlag = false;
                 this.isKilimTask = false;
             }
 
@@ -4435,6 +4463,8 @@ static public class ObjExpr implements Expr{
 		
 		//end of class
 		cv.visitEnd();
+
+        kilimTaskFlag=false;
 
 		bytecode = cw.toByteArray();
 
@@ -6741,6 +6771,7 @@ static String errorMsg(String source, int line, String s){
 }
 
 public static Object eval(Object form) {
+    kilimTaskFlag = false;
 	return eval(form, true);
 }
 

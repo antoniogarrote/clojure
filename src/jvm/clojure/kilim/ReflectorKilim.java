@@ -10,20 +10,23 @@
 
 /* rich Apr 19, 2006 */
 
-package clojure.lang;
+package clojure.kilim;
 
-import kilim.Fiber;
 import kilim.Pausable;
 import kilim.Task;
 
-import java.lang.reflect.*;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public class Reflector{
+public class ReflectorKilim {
 
-public static Object invokeInstanceMethod(Object target, String methodName, Object[] args) {
+
+public static Object invokeInstanceMethod(Object target, String methodName, Object[] args) throws Pausable{
 	try
 		{
 		Class c = target.getClass();
@@ -33,10 +36,10 @@ public static Object invokeInstanceMethod(Object target, String methodName, Obje
 	catch(Exception e)
 		{
 		if(e.getCause() instanceof Exception)
-			throw Util.runtimeException(e.getCause());
+			throw clojure.lang.Util.runtimeException(e.getCause());
 		else if(e.getCause() instanceof Error)
 			throw (Error) e.getCause();
-		throw Util.runtimeException(e);
+		throw clojure.lang.Util.runtimeException(e);
 		}
 }
 
@@ -44,7 +47,8 @@ private static String noMethodReport(String methodName, Object target){
 	 return "No matching method found: " + methodName
 			+ (target==null?"":" for " + target.getClass());
 }
-static Object invokeMatchingMethod(String methodName, List methods, Object target, Object[] args)
+
+public static Object invokeMatchingMethod(String methodName, List methods, Object target, Object[] args) throws Pausable
 		{
 	Method m = null;
 	Object[] boxedArgs = null;
@@ -67,7 +71,7 @@ static Object invokeMatchingMethod(String methodName, List methods, Object targe
 			Class[] params = m.getParameterTypes();
 			if(isCongruent(params, args))
 				{
-				if(foundm == null || Compiler.subsumes(params, foundm.getParameterTypes()))
+				if(foundm == null || subsumes(params, foundm.getParameterTypes()))
 					{
 					foundm = m;
 					boxedArgs = boxArgs(params, args);
@@ -93,7 +97,7 @@ static Object invokeMatchingMethod(String methodName, List methods, Object targe
             Class[] exceptions = m.getExceptionTypes();
             boolean foundPausable = false;
             for(Class e : exceptions) {
-                if(e == kilim.Pausable.class) {
+                if(e == Pausable.class) {
                     foundPausable = true;
                     break;
                 }
@@ -108,7 +112,7 @@ static Object invokeMatchingMethod(String methodName, List methods, Object targe
                 } else {
                      System.out.println("  ARGS NULL");
                 }
-                Object returned = kilim.Task.invoke(m,target,boxedArgs);
+                Object returned = Task.invoke(m,target,boxedArgs);
                 System.out.println("Returned: "+returned);
                 return prepRet(m.getReturnType(), returned);
             } else {
@@ -118,10 +122,10 @@ static Object invokeMatchingMethod(String methodName, List methods, Object targe
 	catch(Exception e)
 		{
 		if(e.getCause() instanceof Exception)
-			throw Util.runtimeException(e.getCause());
+			throw clojure.lang.Util.runtimeException(e.getCause());
 		else if(e.getCause() instanceof Error)
 			throw (Error) e.getCause();
-		throw Util.runtimeException(e);
+		throw clojure.lang.Util.runtimeException(e);
 		}
 
 }
@@ -173,7 +177,7 @@ public static boolean isMatch(Method lhs, Method rhs) {
 			}
 		return match;
 }
-
+/*
 public static Object invokeConstructor(Class c, Object[] args) {
 	try
 		{
@@ -242,7 +246,7 @@ public static Object invokeStaticMethod(String className, String methodName, Obj
 		}
 }
 
-public static Object invokeStaticMethod(Class c, String methodName, Object[] args) {
+public static Object invokeStaticMethod(Class c, String methodName, Object[] args) throws Pausable {
 	if(methodName.equals("new"))
 		return invokeConstructor(c, args);
 	List methods = getMethods(c, args.length, methodName, true);
@@ -295,7 +299,7 @@ public static Object setStaticField(Class c, String fieldName, Object val) {
 	throw new IllegalArgumentException("No matching field found: " + fieldName
 		+ " for " + c);
 }
-
+*/
 public static Object getInstanceField(Object target, String fieldName) {
 	Class c = target.getClass();
 	Field f = getField(c, fieldName, false);
@@ -307,13 +311,13 @@ public static Object getInstanceField(Object target, String fieldName) {
 			}
 		catch(IllegalAccessException e)
 			{
-			throw Util.runtimeException(e);
+			throw clojure.lang.Util.runtimeException(e);
 			}
 		}
 	throw new IllegalArgumentException("No matching field found: " + fieldName
 		+ " for " + target.getClass());
 }
-
+/*
 public static Object setInstanceField(Object target, String fieldName, Object val) {
 	Class c = target.getClass();
 	Field f = getField(c, fieldName, false);
@@ -332,16 +336,16 @@ public static Object setInstanceField(Object target, String fieldName, Object va
 	throw new IllegalArgumentException("No matching field found: " + fieldName
 		+ " for " + target.getClass());
 }
-
-public static Object invokeNoArgInstanceMember(Object target, String name) {
+*/
+public static Object invokeNoArgInstanceMember(Object target, String name) throws Pausable {
 	//favor method over field
 	List meths = getMethods(target.getClass(), 0, name, false);
 	if(meths.size() > 0)
-		return invokeMatchingMethod(name, meths, target, RT.EMPTY_ARRAY);
+		return invokeMatchingMethod(name, meths, target, clojure.lang.RT.EMPTY_ARRAY);
 	else
 		return getInstanceField(target, name);
 }
-
+/*
 
 public static Object invokeInstanceMember(Object target, String name) {
 	//check for field first
@@ -383,7 +387,7 @@ public static Object invokeInstanceMember(String name, Object target, Object arg
 public static Object invokeInstanceMember(String name, Object target, Object... args) {
 	return invokeInstanceMethod(target, name, args);
 }
-
+*/
 
 static public Field getField(Class c, String name, boolean getStatics){
 	Field[] allfields = c.getFields();
@@ -549,4 +553,24 @@ public static Object prepRet(Class c, Object x){
 //			return Double.valueOf(((Float) x).doubleValue());
 	return x;
 }
+
+static public boolean subsumes(Class[] c1, Class[] c2){
+	//presumes matching lengths
+	Boolean better = false;
+	for(int i = 0; i < c1.length; i++)
+		{
+		if(c1[i] != c2[i])// || c2[i].isPrimitive() && c1[i] == Object.class))
+			{
+			if(!c1[i].isPrimitive() && c2[i].isPrimitive()
+			   //|| Number.class.isAssignableFrom(c1[i]) && c2[i].isPrimitive()
+			   ||
+			   c2[i].isAssignableFrom(c1[i]))
+				better = true;
+			else
+				return false;
+			}
+		}
+	return better;
+}
+
 }
