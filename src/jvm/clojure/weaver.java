@@ -37,6 +37,9 @@ public class weaver {
         } else if(args[0].equals("ReflectorKilim")) {
             System.out.println("*** clojure.kilim.ReflectorKilim");
             Weaver.weaveClass("clojure.kilim.ReflectorKilim", Detector.DEFAULT);
+        } else if(args[0].equals("SelectiveMailbox")) {
+            System.out.println("*** clojure.kilim.SelectiveMailbox");
+            Weaver.weaveClass("clojure.kilim.SelectiveMailbox", Detector.DEFAULT);
         } else {
             System.err.println("Error, I don't know how to weave "+args[0]);
         }

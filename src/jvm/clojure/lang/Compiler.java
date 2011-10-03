@@ -15,6 +15,7 @@ package clojure.lang;
 //*
 
 import clojure.asm.*;
+import clojure.asm.Type;
 import clojure.asm.commons.GeneratorAdapter;
 import clojure.asm.commons.Method;
 import clojure.kilim.ReflectorKilim;
@@ -23,8 +24,7 @@ import kilim.analysis.ClassInfo;
 import kilim.analysis.ClassWeaver;
 
 import java.io.*;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Modifier;
+import java.lang.reflect.*;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -48,6 +48,8 @@ static final Symbol LET = Symbol.intern("let*");
 static final Symbol LETFN = Symbol.intern("letfn*");
 static final Symbol DO = Symbol.intern("do");
 static final Symbol FN = Symbol.intern("fn*");
+static final Symbol GENERATOR = Symbol.intern("generator");
+static final Symbol PAUSABLE = Symbol.intern("pausable");
 static final Symbol QUOTE = Symbol.intern("quote");
 static final Symbol THE_VAR = Symbol.intern("var");
 static final Symbol DOT = Symbol.intern(".");
@@ -3450,8 +3452,9 @@ static class InvokeExpr implements Expr{
                 System.out.println("INVOKING PAUSABLE");
                 fexpr.emit(C.EXPRESSION, objx, gen);
                 gen.checkCast(A_TASK_FN_TYPE);
-                Class invokeClass = ((VarExpr) this.fexpr).var.root.getClass();
-                emitArgsAndCallTask(invokeClass, 0, context,objx,gen);
+                //Class invokeClass = ((VarExpr) this.fexpr).var.root.getClass();
+                //emitArgsAndCallTask(invokeClass, 0, context,objx,gen);
+                emitArgsAndCallTask(0,context,objx,gen);
                 System.out.println("INVOKED...");
 			}
 		else if(this.fexpr instanceof VarExpr &&
@@ -3462,10 +3465,37 @@ static class InvokeExpr implements Expr{
                 System.out.println("INVOKING PAUSABLE IN GENERATOR");
                 fexpr.emit(C.EXPRESSION, objx, gen);
                 gen.checkCast(A_GENERATOR_FN_TYPE);
-                Class invokeClass = ((VarExpr) this.fexpr).var.root.getClass();
-                emitArgsAndCallGenerator(invokeClass, 0, context,objx,gen);
+                //Class invokeClass = ((VarExpr) this.fexpr).var.root.getClass();
+                //emitArgsAndCallGenerator(invokeClass, 0, context,objx,gen);
+                emitArgsAndCallGenerator(0,context,objx,gen);
                 System.out.println("INVOKED...");
 			}
+        else if(this.fexpr instanceof LocalBindingExpr &&
+                ((LocalBindingExpr) this.fexpr).b.tag != null)
+        {
+            fexpr.emit(C.EXPRESSION, objx, gen);
+            String typeHint = ((LocalBindingExpr) this.fexpr).b.tag.getName();
+            if(typeHint.equals("clojure.lang.ITaskFn") || typeHint.equals("clojure.lang.ATaskFn"))
+            {
+                System.out.println("INVOKING PAUSABLE ___");
+                gen.checkCast(A_TASK_FN_TYPE);
+                emitArgsAndCallTask(0,context,objx,gen);
+                System.out.println("INVOKED...");
+            }
+            else if(typeHint.equals("clojure.lang.AGeneratorFn"))
+            {
+                System.out.println("INVOKING GENERATOR ___");
+                gen.checkCast(A_GENERATOR_FN_TYPE);
+                emitArgsAndCallGenerator(0,context,objx,gen);
+                System.out.println("INVOKED...");
+            }
+            else
+            {
+                gen.checkCast(IFN_TYPE);
+                emitArgsAndCall(0, context, objx, gen);
+            }
+
+        }
         else
         {
 			fexpr.emit(C.EXPRESSION, objx, gen);
@@ -3552,7 +3582,7 @@ static class InvokeExpr implements Expr{
 		                                                                                   args.count())]));
 	}
 
-	void emitArgsAndCallTask(Class invokeClass, int firstArgToEmit, C context, ObjExpr objx, GeneratorAdapter gen){
+	void emitArgsAndCallTask(int firstArgToEmit, C context, ObjExpr objx, GeneratorAdapter gen){
 		for(int i = firstArgToEmit; i < Math.min(MAX_POSITIONAL_ARITY, args.count()); i++)
 			{
 			Expr e = (Expr) args.nth(i);
@@ -3580,7 +3610,7 @@ static class InvokeExpr implements Expr{
                                                        args.count())]));
 	}
 
-	void emitArgsAndCallGenerator(Class invokeClass, int firstArgToEmit, C context, ObjExpr objx, GeneratorAdapter gen){
+	void emitArgsAndCallGenerator(int firstArgToEmit, C context, ObjExpr objx, GeneratorAdapter gen){
 		for(int i = firstArgToEmit; i < Math.min(MAX_POSITIONAL_ARITY, args.count()); i++)
 			{
 			Expr e = (Expr) args.nth(i);
@@ -6746,7 +6776,45 @@ private static Expr analyzeSeq(C context, ISeq form, String name) {
 		if(inline != null)
 			return analyze(context, preserveTag(form, inline.applyTo(RT.next(form))));
 		IParser p;
-		if(op.equals(FN))
+		if(op.equals(PAUSABLE))
+        {
+            IPersistentMap mm = ((PersistentList) form).meta();
+            if(mm==null)
+                mm = PersistentHashMap.EMPTY;
+
+            mm = mm.assoc(Keyword.intern("pausable"),true);
+            Symbol OpFn = FN;
+            form = RT.cons(OpFn,RT.more(form));
+            try
+            {
+                form = (((Cons) form).withMeta(mm));
+            }
+            catch(Exception e)
+            {
+              System.out.println(e.getMessage());
+            }
+            return FnExpr.parse(context, form, name);
+        }
+        else if(op.equals(GENERATOR))
+        {
+            IPersistentMap mm = ((PersistentList) form).meta();
+            if(mm==null)
+                mm = PersistentHashMap.EMPTY;
+
+            mm = mm.assoc(Keyword.intern("generator"),true);
+            Symbol OpFn = FN;
+            form = RT.cons(OpFn,RT.more(form));
+            try
+            {
+                form = (((Cons) form).withMeta(mm));
+            }
+            catch(Exception e)
+            {
+              System.out.println(e.getMessage());
+            }
+            return FnExpr.parse(context, form, name);
+        }
+        else if(op.equals(FN))
 			return FnExpr.parse(context, form, name);
 		else if((p = (IParser) specials.valAt(op)) != null)
 			return p.parse(context, form);
